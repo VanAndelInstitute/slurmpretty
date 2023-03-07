@@ -1,0 +1,10 @@
+#!/usr/bin/perl
+#Zack Ramjan - USC Epigenome Center
+#PBS HACK, wrap pbs qstat to look like sge qstat. we emulate array jobs
+#by pulling the jobid and tasking from the job name in the form
+# name = zXXXX_YYY where XXX is the jobid and YYY is the task id
+use Time::Local;
+use Term::ANSIColor;
+use strict;
+
+print `squeue -o"%.7i %.9P %.8j %.8u %.2t  %.10M %.10L %.6D %.5C %N"`;
