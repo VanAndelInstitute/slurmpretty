@@ -7,4 +7,4 @@ use Time::Local;
 use Term::ANSIColor;
 use strict;
 
-print `squeue -o"%.7i %.9P %.15j %.15u %.2t  %.10M %.10L %.6D %.5C %N"`;
+print `squeue -o"%.7i %.9P %.15j %.15u %.10T %.20V %.20S %.10M %.10L %.6D %.5C %N"`;

@@ -81,7 +81,8 @@ compute080	bigmem
 compute081	bigmem
 compute082	epi-only
 compute083	epi-only
-compute084	bbc-only
-compute085	bbc-only
+compute084	gpu
+compute085	gpu
 compute086	bbc-only
 compute087	bbc-only
+compute088	bbc-only

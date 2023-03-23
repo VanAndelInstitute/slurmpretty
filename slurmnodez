@@ -8,13 +8,15 @@ use File::Basename;
 my $EXECPATH = abs_path(dirname(__FILE__));
 $SLURMDIR= "/usr/local/bin";
 
-$sinfo = `$SLURMDIR/sinfo -o "%n %e %m %a %c %C" -h`;
-$squeue = `$SLURMDIR/squeue --format="%i %.9P %.30j %.8u %.8T %.10M %.9l %.10D %R " -h`;
+$sinfo = `$SLURMDIR/sinfo -o "%n %e %m %t %c %C" -h`;
+$squeue = `$SLURMDIR/squeue --format="%i %.9P %.30j %.15u %.8T %.10M %.9l %.10D %R " -h`;
+$docker = ` ls -rt $EXECPATH/cpulogs/computeloads* | tail -n 1 | xargs cat`;
 open HAND, '<', "$EXECPATH/nodes.txt";
 %nodeClass = map {chomp; split /\t+/} (<HAND>);
 
 
 my @nodes = split "\n", $sinfo;
+my @containers = split "\n", $docker;
 my @jobs = split "\n", $squeue;
 
 foreach my $n (@nodes)
@@ -27,6 +29,17 @@ foreach my $n (@nodes)
 	$nodeprops{$node}{cores}=$lines[4];
 	$nodeprops{$node}{coresinuse}=$nodeCores[0];
 	$nodeprops{$node}{coresfree}=$nodeCores[1];
+}
+
+foreach my $n (@containers)
+{
+
+	my @lines = split /\s+/, $n;
+	my $node = $lines[2];
+	$nodeprops{$node}{cpuload}=$lines[3];
+	$nodeprops{$node}{cpuload} =~ s/\.\d+\%//;
+	$nodeprops{$node}{cpuload} = $nodeprops{$node}{cpuload} / 100;
+	$nodeprops{$node}{memload}=$nodeCores[4];
 }
 
 foreach my $n (@jobs)
@@ -48,7 +61,7 @@ foreach my $n (@jobs)
 		}
 	}
 	for my $j (@jobNodes)
-	{
+{
 		$nodeprops{$j}{job}{$jobID}{user} = $user;
 	}
 }
@@ -64,10 +77,17 @@ foreach $k (sort keys %nodeprops)
     for my $j (keys %{ $nodeprops{$k}{job} }) {
       print "[" . color("cyan") . "#$j" . color("reset") . ":" . color("yellow") .  $nodeprops{$k}{job}{$j}{user} . color("reset") . "]";
     }
-	print  "\t" . $nodeprops{$k}{coresinuse} . " cores active" if %{ $nodeprops{$k}{job}};
-
-	print color("green") . "FREE" .  color("reset") if ! %{ $nodeprops{$k}{job}};
-	print color("red") . "NODE IS OFFLINE" .  color("reset") if $nodeprops{$k}{status} !~ /up/;
+    	#print  "\t" . $nodeprops{$k}{coresinuse} . " cores requested" if %{ $nodeprops{$k}{job}};
+	print  "\t load="  . $nodeprops{$k}{cpuload} if %{ $nodeprops{$k}{job}};
+	
+	if( $nodeprops{$k}{status} =~ /down/)
+	{
+		print color("red") . "NODE IS OFFLINE" .  color("reset"); 
+	}
+	elsif (! %{ $nodeprops{$k}{job}})
+	{
+		print color("green") . "FREE" .  color("reset");
+	}
 	print "\n";
 
 }
