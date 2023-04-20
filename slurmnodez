@@ -18,6 +18,7 @@ open HAND, '<', "$EXECPATH/nodes.txt";
 my @nodes = split "\n", $sinfo;
 my @containers = split "\n", $docker;
 my @jobs = split "\n", $squeue;
+$detail = 1 if $ARGV[0] eq "-f";
 
 foreach my $n (@nodes)
 {
@@ -39,7 +40,10 @@ foreach my $n (@containers)
 	$nodeprops{$node}{cpuload}=$lines[3];
 	$nodeprops{$node}{cpuload} =~ s/\.\d+\%//;
 	$nodeprops{$node}{cpuload} = $nodeprops{$node}{cpuload} / 100;
-	$nodeprops{$node}{memload}=$nodeCores[4];
+	$nodeprops{$node}{memload}=$lines[4];
+	$nodeprops{$node}{memload}=~ s/\.\d+//g;
+	$nodeprops{$node}{mempct}=$lines[7];
+	$nodeprops{$node}{threads}=$lines[14];
 }
 
 foreach my $n (@jobs)
@@ -78,12 +82,19 @@ foreach $k (sort keys %nodeprops)
       print "[" . color("cyan") . "#$j" . color("reset") . ":" . color("yellow") .  $nodeprops{$k}{job}{$j}{user} . color("reset") . "]";
     }
     	#print  "\t" . $nodeprops{$k}{coresinuse} . " cores requested" if %{ $nodeprops{$k}{job}};
-	print  "\t load="  . $nodeprops{$k}{cpuload} if %{ $nodeprops{$k}{job}};
+	print  "\tload="  . $nodeprops{$k}{cpuload} if %{ $nodeprops{$k}{job}};
+	print  "\tmem="  . $nodeprops{$k}{memload} if %{ $nodeprops{$k}{job}} && $detail ;
+	print  "\tthreads="  . $nodeprops{$k}{threads} if %{ $nodeprops{$k}{job}} && $detail;
 	
 	if( $nodeprops{$k}{status} =~ /down/)
 	{
 		print color("red") . "NODE IS OFFLINE" .  color("reset"); 
 	}
+	elsif( $nodeprops{$k}{status} =~ /drain/)
+	{
+		print color("magenta") . "NODE IS IN MAINTENANCE MODE" .  color("reset"); 
+	}
+	
 	elsif (! %{ $nodeprops{$k}{job}})
 	{
 		print color("green") . "FREE" .  color("reset");

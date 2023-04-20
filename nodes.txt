@@ -86,3 +86,9 @@ compute085	gpu
 compute086	bbc-only
 compute087	bbc-only
 compute088	bbc-only
+compute089	gpu
+compute090	gpu
+compute091	pfeifer
+compute092	staffsci
+compute093	staffsci
+compute094	staffsci
