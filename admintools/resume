@@ -1,0 +1,2 @@
+#!/bin/bash
+scontrol update nodename=$1 state=resume
