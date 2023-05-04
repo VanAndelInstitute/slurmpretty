@@ -52,7 +52,7 @@ sub checkJob
 		my $nodeCores=$1;
 		
 		#get the docker stats history for last minutes
-		my @dockerHistory = `find /varidata/research/software/slurmPretty/cpulogs -mmin -$idleLimitMin | sort | xargs  grep $node`;
+		my @dockerHistory = `cd /varidata/research/software/slurmPretty/cpulogs; find ./ -mmin -$idleLimitMin | xargs ls -rt | xargs  grep $node`;
 		chomp @dockerHistory;
 		
 		my $loadSum=0;
@@ -81,16 +81,21 @@ sub checkJob
 		
 		if ($utilization < $cpuUtilizationCutoff)
 		{
+			#get the job script
+			$jobData =~ /\s+Command=(\S+)\s+/;
+			my $command = $1;
+			$command = `cat $command | head -n 100` if -f $command;
+
 			print STDERR "\t\tKILL $jobID\n"; 
 			my $ps = `ssh $node  ps ax o user:32,pid,pcpu,pmem,vsz,rss,stat,start_time,time,cmd | grep $userId | grep -v sshd | grep -v /var/spool/slurm`;
 			my $warning = <<EOF
 Dear $userId,
 
-To ensure HPC resources are used fairly and not wasted, the system automatically detects jobs that may be considered wasteful, incorrectly sized, or abusive. Please understand HPC is a community resource, improper usage can impact other users. Note that these limits only apply to the public partitions, private nodes owned directly by a lab are not enforced or monitored for effeciency. 
+To ensure HPC resources are used fairly and not wasted, the system automatically detects jobs that may be considered wasteful, incorrectly sized, or abusive. Please understand HPC is a community resource, improper usage can impact other users. Note that these limits only apply to the public partitions, private nodes owned directly by a lab are not enforced or monitored for efficiency. 
 
 - Idle jobs that are occupying a node but not doing anything are not allowed
-- Jobs that attempt to "reserve" or "keep" nodes by performing trivial tasks to articifically inflate cpu usage to appear "busy" are not allowed. 
-- Undersized jobs that only use a small amount of resource but are allocated to nodes with large resoures are wasteful and not allowed. These jobs should be put on a node that best matches the job requirements. For example, a job that only utilizes a few cores should never but run on a 128core node, and instead should use one of the smaller nodes from either the quick or short partitons. 
+- Jobs that attempt to "reserve" or "keep" nodes by performing trivial tasks to artificially  inflate cpu usage to appear "busy" are not allowed. 
+- Undersized jobs that only use a small amount of resource but are allocated to nodes with large resources are wasteful and not allowed. These jobs should be put on a node that best matches the job requirements. For example, a job that only utilizes a few cores should never but run on a 128core node, and instead should use one of the smaller nodes from either the quick or short partitions. 
 
 
 The system has detected that your job $jobID running on $node has been excessively idle for an extended period of time and has very poor utilization. Please immediately kill the job and/or move it to a more appropriate partition. Wasteful Jobs that continue to run after being warned will be killed. Continued misuse of the cluster may result in automatic deprioritization of your jobs.
@@ -107,13 +112,25 @@ please open a help ticket with the HPC team if you have any questions: hpc3\@vai
 
 
 TRACKING INFO:
-----------------------------------
+#####################################################
 
 PROCESS OUTPUT
 $ps
+---------------------------------
 
+JOB INFO
 $jobData
+---------------------------------
 
+JOB SCRIPT
+$command
+---------------------------------
+
+NODE INFO
+$nodeData
+---------------------------------
+
+HOST INFO
 $dockerStatOutput
 
 EOF
