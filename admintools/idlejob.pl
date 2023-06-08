@@ -1,11 +1,12 @@
 #!/usr/bin/env perl
 use strict;
-my $cpuUtilizationCutoff = 0.33;
-my $cpuUtilizationCutoff = 0.25;
+my $cpuUtilizationCutoff = 0.20;
+my $memUtilizationCutoff = 0.20;
+my $threadsUtilizationCutoff = 35;
 my $idleLimitHours = 4;
 my $idleLimitMin = 60 * $idleLimitHours;
 
-my @partitions = qw/long big bigmem gpu/;
+my @partitions = qw/big bigmem gpu/;
 
 for my $p (@partitions)
 {
@@ -41,7 +42,7 @@ sub checkJob
 	$jobData =~ /\sUserId=([\w\.]+)/;
 	my $userId = $1;
 
-	print STDERR "checking $1 that has been running for $hours hours\n";
+	system("logger checking $1 that has been running for $hours hours");
 	if($hours >= $idleLimitHours && $jobData =~ /\s+NodeList=(compute\d\d\d)\s+/)
 	{
 		my $node = $1;
@@ -59,6 +60,7 @@ sub checkJob
 		my $loadCount=0;
 		my $maxLoad=0;
 		my $maxMem=0;
+		my $maxThreads=0;
 		
 		my $dockerStatOutput = join("\n",@dockerHistory);
 		#track the usage over the last time period
@@ -75,18 +77,20 @@ sub checkJob
 			my $memUsage = ($dockerStatCols[7] / 100);
 			$maxMem = $memUsage if $maxMem < $memUsage;
 
+			$maxThreads = $dockerStatCols[14];
+
 		}
 		my $utilization = $maxLoad / $nodeCores;
-		print STDERR "\t$userId\@$node: peakload=$maxLoad /  $nodeCores = $utilization, peakmem=$maxMem\n"; 
+		system("logger \t$userId\@$node: peakload=$maxLoad /  $nodeCores = $utilization, peakmem=$maxMem, peakThreads=$maxThreads"); 
 		
-		if ($utilization < $cpuUtilizationCutoff)
+		if ($utilization < $cpuUtilizationCutoff && $maxMem < $memUtilizationCutoff && $maxThreads < $threadsUtilizationCutoff)
 		{
 			#get the job script
 			$jobData =~ /\s+Command=(\S+)\s+/;
 			my $command = $1;
 			$command = `cat $command | head -n 100` if -f $command;
 
-			print STDERR "\t\tKILL $jobID\n"; 
+			system("logger \t\tWARN_IDLE $jobID $node $userId"); 
 			my $ps = `ssh $node  ps ax o user:32,pid,pcpu,pmem,vsz,rss,stat,start_time,time,cmd | grep $userId | grep -v sshd | grep -v /var/spool/slurm`;
 			my $warning = <<EOF
 Dear $userId,
@@ -98,7 +102,8 @@ To ensure HPC resources are used fairly and not wasted, the system automatically
 - Undersized jobs that only use a small amount of resource but are allocated to nodes with large resources are wasteful and not allowed. These jobs should be put on a node that best matches the job requirements. For example, a job that only utilizes a few cores should never but run on a 128core node, and instead should use one of the smaller nodes from either the quick or short partitions. 
 
 
-The system has detected that your job $jobID running on $node has been excessively idle for an extended period of time and has very poor utilization. Please immediately kill the job and/or move it to a more appropriate partition. Wasteful Jobs that continue to run after being warned will be killed. Continued misuse of the cluster may result in automatic deprioritization of your jobs.
+The system has detected that your job $jobID running on $node has been excessively idle for an extended period of time and has very poor utilization. Please immediately address this issue and/or resubmit it to a more appropriate partition. Wasteful Jobs that continue to run after being warned will be terminated. Continued misuse of the cluster may result in automatic deprioritization of your jobs.
+
 
 please open a help ticket with the HPC team if you have any questions: hpc3\@vai.org
 
@@ -136,17 +141,18 @@ $dockerStatOutput
 EOF
 ;
 	
-		&email("zack.ramjan\@vai.org","Warning: HPC Job $jobID on $node, improper usage detected", $warning); 		
+		&email("$userId\@vai.org","Warning: HPC Job $jobID on $node, improper usage detected", $warning); 		
+		#&email("zack.ramjan\@vai.org","Warning: HPC Job $jobID on $node, improper usage detected", $warning); 		
 
 		}
 		else
 		{
-			print STDERR "\t\tJob OK $jobID\n";
+			system("logger \t\tJob OK $jobID");
 		}
 	}
 	else
 	{
-		print STDERR "\t$userId:$jobID: Skipping \n"; 
+		system("logger \t$userId:$jobID: Skipping"); 
 	}
 }
 
@@ -156,6 +162,7 @@ sub email
 	my $subject = shift @_;
 	my $body = shift @_;
 
+	#open(my $MAIL, "|/usr/bin/mail -r hpc3\@vai.org -b cdd89583.vai.org\@amer.teams.ms -s \"$subject\" $to") or die ("Can't sendmail - $!");
 	open(my $MAIL, "|/usr/bin/mail -r hpc3\@vai.org -s \"$subject\" $to") or die ("Can't sendmail - $!");
 	print $MAIL $body;
 	close($MAIL);
