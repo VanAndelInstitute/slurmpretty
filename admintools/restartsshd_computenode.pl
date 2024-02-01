@@ -14,20 +14,9 @@ chomp $baremetal;
 $baremetal =~ /(server\d\d\d)/ || die "could not determine bare metal docker server";
 $baremetal = $1;
 
-print STDERR "restarting (25 sec)\n";
-runcmd("ssh $compute scontrol update nodename=$compute state=DRAIN reason=\"reload-docker\"");
-sleep 3;
-print STDERR "(22 sec)\n";
-runcmd("ssh $baremetal \"cd /varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode;  docker-compose -f $baremetal-docker-compose.yml rm -f -s $compute \"" );
-sleep 3;
-print STDERR "(20 sec)\n";
-runcmd("ssh $baremetal \"cd /varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode;  docker-compose -f $baremetal-docker-compose.yml up -d $compute \"" );
-sleep 20;
-print STDERR "(1 sec)\n";
-runcmd("ssh $compute scontrol update nodename=$compute state=resume");
+runcmd("ssh $baremetal docker exec -t $compute systemctl restart sshd"); 
+runcmd("ssh $compute hostname "); 
 
-print STDERR "$barematal:$compute has been restarted and resumed\n";
-#test if git repo is up to date
 
 sub runcmd{
 	my $date = `date`;

@@ -1,5 +1,12 @@
 #!/bin/bash
+if [[ -f /varidata/research/software/slurmPretty/admintools/tracking/$1 ]] ; then
+	    echo lockfile for $1 already exits
+	    exit
+fi
 
+touch /varidata/research/software/slurmPretty/admintools/tracking/$1
+logger RECOVERY STARTED: admintools/reload_node_completely.sh $1
+export PATH=$PATH:/cm/local/apps/cmd/bin:/usr/local/bin
 
 if [[ $# -eq 0 ]] ; then
 	echo 'specify a server'
@@ -21,4 +28,5 @@ awx  --conf.insecure  --conf.host https://ansible.vai.org:8043 --conf.token vJD0
 sleep 60
 ssh $1  /varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode/restartcontainers.sh
 sleep 10
+rm /varidata/research/software/slurmPretty/admintools/tracking/$1
 
