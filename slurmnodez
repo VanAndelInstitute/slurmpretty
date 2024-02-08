@@ -7,6 +7,7 @@ use File::Basename;
 
 my $EXECPATH = abs_path(dirname(__FILE__));
 $SLURMDIR= "/usr/local/bin";
+$dockerPath = "/varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode";
 
 $sinfo = `$SLURMDIR/sinfo -o "%n %e %m %t %c %C" -h`;
 $squeue = `$SLURMDIR/squeue --format="%i %.9P %.30j %.15u %.8T %.10M %.9l %.10D %R " -h`;
@@ -103,8 +104,17 @@ foreach $k (sort keys %nodeprops)
 	print  "\tload="  . $nodeprops{$k}{cpuload} if %{ $nodeprops{$k}{job}} || $detail;
 	print  "\tmem="  . $nodeprops{$k}{memload} . "/" .  $nodeprops{$k}{memlimit} if $detail ;
 	print  "\tthreads="  . $nodeprops{$k}{threads} if $detail;
-	print  "\thost="  . $nodeprops{$k}{baremetal} if $detail;
+	print  "\thost="  . &computeToServer($k) if $detail;
 	print "\n";
+
+}
+
+sub computeToServer
+{
+        my $compute = shift @_;
+        my $server = `grep $compute $dockerPath/*.yml | head -n 1`;
+        $server =~ /(server\d\d\d)/;
+        return $1;
 
 }
 
