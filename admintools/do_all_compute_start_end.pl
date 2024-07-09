@@ -16,7 +16,7 @@ for my $n ($start..$end)
      next if system("ping -c 1 -W .1  compute$n");
 
 	print STDERR "compute$n:\n";
-	system("ssh root\@compute$n \"" . join(" ",@ARGV) . "\"" );
+	system("ssh -q -o \"StrictHostKeyChecking no\" root\@compute$n \"" . join(" ",@ARGV) . "\"" );
 	print  "\n";
 	sleep 1;
 }

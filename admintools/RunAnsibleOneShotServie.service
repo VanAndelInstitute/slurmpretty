@@ -1,0 +1,11 @@
+[Unit]
+Description=A oneshot service to run ansible on this node when it reboots
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/sleep 60
+ExecStart=/bin/bash -c "ssh scheduler /varidata/research/software/slurmPretty/admintools/run_ansible_on_node.sh $HOSTNAME"
+
+[Install]
+WantedBy=multi-user.target
