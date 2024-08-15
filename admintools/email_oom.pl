@@ -5,19 +5,22 @@ use strict;
 my $oom = `curl -u 1f92pc0bg8efn5dkr6tj5me1gemiql3dn50p9f47afvcf1r3i0m3:token  -X GET -H 'Accept: application/json' "http://graylog.hpc.vai.org:9000/api/search/messages?query=out%20AND%20of%20AND%20memory%20AND%20UID&streams=65aa9fef6ab10b7345a88679&timerange=1h&fields=timestamp%2Cmessage"`;
 
 
-while ($oom =~ /(compute\d\d\d).+?Killed process \d+ \((.+?)\).+?UID:(\d+)/g)
+while ($oom =~ /\"(20\d\d.+?)\".+?(compute\d\d\d).+?Killed process \d+ \((.+?)\).+?UID:(\d+)/g)
 {
-	my $node = $1;
-	my $process = $2;
-	my $username = `id -un $3`;
+	my $date = $1;
+	my $node = $2;
+	my $process = $3;
+	my $username = `id -un $4`;
 	chomp $username;
-	print "$1 $2 $3 $username \n";
+	next if $4 == 0;
+
+	print "$date $node $process $4 $username\n";
 	my $warning = <<EOF
 
 Dear $username,
 
-Your HPC job running $process on $node has triggered an "Out of Memory" error and may be crashing. 
-This error happens when your app or program attempts to use more RAM/memory than is available. You may want to verify your data and/or run on a larger compute node (if available). This is an automated message from the HPC job scheduler.
+Your HPC job running $process on $node at $date has triggered an "Out of Memory" error and is crashing. 
+This error happens when your app or program attempts to use more RAM/memory than is available. Please verify your data and/or run on a larger compute node (if available). This is an automated message from the HPC job scheduler.
 
 please open a help ticket with the HPC team if you have any questions: hpc3\@vai.org
 
