@@ -19,7 +19,7 @@ do
 done
 echo "node is now up"  2>&1 | tee -a /varidata/research/software/slurmPretty/admintools/tracking/$1
 
-awx  --conf.insecure  --conf.host https://ansible.vai.org:8043 --conf.token wQW38k56KE6N7zHQJt9IZGpzLUjFfk job_templates launch --wait --limit $1.hpc.vai.org 12  2>&1 | tee -a /varidata/research/software/slurmPretty/admintools/tracking/$1
+awx  --conf.insecure  --conf.host https://ansible.vai.org:8043 --conf.token zTCVIAwJibkRrTpk6pgLZCAoM0rH0X job_templates launch --wait --limit $1.hpc.vai.org 12  2>&1 | tee -a /varidata/research/software/slurmPretty/admintools/tracking/$1
 #sleep 60
 #ssh $1  /varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode/restartcontainers.sh
 sleep 10

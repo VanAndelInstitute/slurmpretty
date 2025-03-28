@@ -15,15 +15,18 @@ $docker = ` ls -rt $EXECPATH/cpulogs/computeloads* | tail -n 1 | xargs cat`;
 open HAND, '<', "$EXECPATH/nodes.txt";
 %nodeClass = map {chomp; split /\t+/} (<HAND>);
 
-
+my $totalNodes=0;
+my $totalCores=0;
 my @nodes = split "\n", $sinfo;
 my @containers = split "\n", $docker;
 my @jobs = split "\n", $squeue;
 $detail = 1 if $ARGV[0] eq "-f";
+$filter = 1 if $ARGV[0] eq "-p";
+$totals = 1 if $ARGV[0] eq "-t";
 
 foreach my $n (@nodes)
 {
-
+	$totalNodes++;
 	my @lines = split /\s+/, $n;
 	my $node = $lines[0];
 	my @nodeCores = split "/", $lines[5];
@@ -78,9 +81,24 @@ foreach my $n (@jobs)
 
 foreach $k (sort keys %nodeprops)
 {
+	$matched = 0;
+	if ( $filter == 1)
+	{
+		for my $i (0 .. $#ARGV)
+		{
+			if ($nodeClass{$k} =~ /$ARGV[$i]/)
+			{
+				$matched = 1;
+				break;
+			}
+		}
+	}
+
+	next if ( $filter == 1 and $matched == 0 );
 	
 	$color = $nodeprops{$k}{job}  ? "red" : "green";
 	print color($color) . "$k   " . $nodeClass{$k} . "\t" . color("reset");
+	$totalCores+=$nodeprops{$k}{cores};
 	print "$nodeprops{$k}{cores}core\t";
 	
     for my $j (keys %{ $nodeprops{$k}{job} }) {
@@ -108,6 +126,7 @@ foreach $k (sort keys %nodeprops)
 	print "\n";
 
 }
+print "TOTALS\tnodes: $totalNodes\t cores: $totalCores\n" if $totals;
 
 sub computeToServer
 {

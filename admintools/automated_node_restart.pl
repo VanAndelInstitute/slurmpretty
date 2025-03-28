@@ -17,7 +17,8 @@ my $serverToBounce = $down[rand @down];
 my $downServers = join(" ",@down);
 
 system "logger Servers down: $downServers. Choosing one to reboot: reload_node_completely.sh $serverToBounce\n";
-system "/varidata/research/software/slurmPretty/admintools/reload_node_completely.sh  $serverToBounce";
+system "date";
+system "$reloadScript  $serverToBounce";
 
 
 sub computeToServer

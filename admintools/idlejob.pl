@@ -1,12 +1,12 @@
 #!/usr/bin/env perl
 use strict;
-my $cpuUtilizationCutoff = 0.20;
+my $cpuUtilizationCutoff = 10;
 my $memUtilizationCutoff = 0.20;
 my $threadsUtilizationCutoff = 35;
 my $idleLimitHours = 4;
 my $idleLimitMin = 60 * $idleLimitHours;
 
-my @partitions = qw/big bigmem gpu/;
+my @partitions = qw/bigmem gpu/;
 
 for my $p (@partitions)
 {
@@ -42,7 +42,7 @@ sub checkJob
 	$jobData =~ /\sUserId=([\w\.]+)/;
 	my $userId = $1;
 
-	system("logger checking $1 that has been running for $hours hours");
+	logit("checking $1 that has been running for $hours hours");
 	if($hours >= $idleLimitHours && $jobData =~ /\s+NodeList=(compute\d\d\d)\s+/)
 	{
 		my $node = $1;
@@ -56,7 +56,6 @@ sub checkJob
 		my @dockerHistory = `cd /varidata/research/software/slurmPretty/cpulogs; find ./ -mmin -$idleLimitMin | xargs ls -rt | xargs  grep $node`;
 		chomp @dockerHistory;
 		
-		my $loadSum=0;
 		my $loadCount=0;
 		my $maxLoad=0;
 		my $maxMem=0;
@@ -69,8 +68,7 @@ sub checkJob
 			$loadCount++;
 			my @dockerStatCols = split(/\s+/,$line);
 			$dockerStatCols[3] =~ s/\%//g;
-			my $cpuUsage =  ($dockerStatCols[3] / 100);
-			$loadSum += $cpuUsage;
+			my $cpuUsage =  $dockerStatCols[3];
 			$maxLoad = $cpuUsage if $maxLoad < $cpuUsage;
 
 			$dockerStatCols[7] =~ s/\%//g;
@@ -80,10 +78,10 @@ sub checkJob
 			$maxThreads = $dockerStatCols[14];
 
 		}
-		my $utilization = $maxLoad / $nodeCores;
-		system("logger \t$userId\@$node: peakload=$maxLoad /  $nodeCores = $utilization, peakmem=$maxMem, peakThreads=$maxThreads"); 
+		logit("\t$userId\@$node: peakload=$maxLoad, peakmem=$maxMem, peakThreads=$maxThreads"); 
 		
-		if ($utilization < $cpuUtilizationCutoff && $maxMem < $memUtilizationCutoff && $maxThreads < $threadsUtilizationCutoff)
+		#		if ($utilization < $cpuUtilizationCutoff && $maxMem < $memUtilizationCutoff && $maxThreads < $threadsUtilizationCutoff)
+		if ($maxLoad < $cpuUtilizationCutoff)
 		{
 			#get the job script
 			$jobData =~ /\s+Command=(\S+)\s+/;
@@ -91,6 +89,7 @@ sub checkJob
 			$command = `cat $command | head -n 100` if -f $command;
 
 			system("logger \t\tWARN_IDLE $jobID $node $userId"); 
+			logit("\t\tWARN_IDLE $jobID $node $userId"); 
 			my $ps = `ssh $node  ps ax o user:32,pid,pcpu,pmem,vsz,rss,stat,start_time,time,cmd | grep $userId | grep -v sshd | grep -v /var/spool/slurm`;
 			my $warning = <<EOF
 Dear $userId,
@@ -147,12 +146,12 @@ EOF
 		}
 		else
 		{
-			system("logger \t\tJob OK $jobID");
+			logit("\t\tJob OK $jobID");
 		}
 	}
 	else
 	{
-		system("logger \t$userId:$jobID: Skipping"); 
+		logit("\t$userId:$jobID: Skipping"); 
 	}
 }
 
@@ -161,9 +160,18 @@ sub email
 	my $to = shift @_;
 	my $subject = shift @_;
 	my $body = shift @_;
-
+	logit("\t\t\t/usr/bin/mail -r hpc3\@vai.org -s \"$subject\" $to");
 	#open(my $MAIL, "|/usr/bin/mail -r hpc3\@vai.org -b cdd89583.vai.org\@amer.teams.ms -s \"$subject\" $to") or die ("Can't sendmail - $!");
 	open(my $MAIL, "|/usr/bin/mail -r hpc3\@vai.org -s \"$subject\" $to") or die ("Can't sendmail - $!");
 	print $MAIL $body;
 	close($MAIL);
+}
+sub logit 
+{
+	my $logDate = `date \"+%D %T\"`;
+	chomp  $logDate;
+	my $msg = shift @_;
+	open my $logfile, ">>/varidata/research/software/slurmPretty/admintools/idleLog.txt";
+	print $logfile "$logDate\t$msg\n";
+	close $logfile;
 }
