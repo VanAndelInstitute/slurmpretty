@@ -1,0 +1,140 @@
+#!/usr/bin/perl
+use Time::Local;
+use Term::ANSIColor;
+use Data::Dumper;
+use Cwd 'abs_path';
+use File::Basename;
+
+my $EXECPATH = abs_path(dirname(__FILE__));
+$SLURMDIR= "/usr/local/bin";
+$dockerPath = "/varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode";
+
+$sinfo = `$SLURMDIR/sinfo -o "%n %e %m %t %c %C" -h`;
+$squeue = `$SLURMDIR/squeue --format="%i %.9P %.30j %.15u %.8T %.10M %.9l %.10D %R " -h`;
+$docker = ` ls -rt $EXECPATH/cpulogs/computeloads* | tail -n 1 | xargs cat`;
+open HAND, '<', "$EXECPATH/nodes.txt";
+%nodeClass = map {chomp; split /\t+/} (<HAND>);
+
+my $totalNodes=0;
+my $totalCores=0;
+my @nodes = split "\n", $sinfo;
+my @containers = split "\n", $docker;
+my @jobs = split "\n", $squeue;
+$detail = 1 if $ARGV[0] eq "-f";
+$filter = 1 if $ARGV[0] eq "-p";
+$totals = 1 if $ARGV[0] eq "-t";
+
+foreach my $n (@nodes)
+{
+	$totalNodes++;
+	my @lines = split /\s+/, $n;
+	my $node = $lines[0];
+	my @nodeCores = split "/", $lines[5];
+	$nodeprops{$node}{status}=$lines[3];
+	$nodeprops{$node}{cores}=$lines[4];
+	$nodeprops{$node}{coresinuse}=$nodeCores[0];
+	$nodeprops{$node}{coresfree}=$nodeCores[1];
+}
+
+foreach my $n (@containers)
+{
+
+	my @lines = split /\s+/, $n;
+	my $node = $lines[2];
+	$nodeprops{$node}{baremetal}=$lines[0];
+	$nodeprops{$node}{baremetal} =~ s/\://g;
+	$nodeprops{$node}{cpuload}=$lines[3];
+	$nodeprops{$node}{cpuload} =~ s/\.\d+\%//;
+	$nodeprops{$node}{cpuload} = $nodeprops{$node}{cpuload} / 100;
+	$nodeprops{$node}{memload}=$lines[4];
+	$nodeprops{$node}{memload}=~ s/\.\d+//g;
+	$nodeprops{$node}{memlimit}=$lines[6];
+	$nodeprops{$node}{memlimit}=~ s/\.\d+//g;
+	$nodeprops{$node}{mempct}=$lines[7];
+	$nodeprops{$node}{threads}=$lines[14];
+}
+
+foreach my $n (@jobs)
+{
+	my @lines = split /\s+/, $n;
+	my $user = $lines[3];
+	my $jobID = $lines[0];
+	my $nodeList = $lines[8];
+	my @jobNodes;
+	while ($nodeList =~ /(\d\d\d)/g)
+	{
+		push @jobNodes, sprintf("compute%03d", $1);
+	}
+	while ($nodeList =~ /\W(\d\d\d)-(\d\d\d)/g)
+	{
+		for my $i ($1..$2)
+		{
+			push @jobNodes, sprintf("compute%03d", $i);
+		}
+	}
+	for my $j (@jobNodes)
+{
+		$nodeprops{$j}{job}{$jobID}{user} = $user;
+	}
+}
+#print Dumper(%nodeprops);
+
+foreach $k (sort keys %nodeprops)
+{
+	$matched = 0;
+	if ( $filter == 1)
+	{
+		for my $i (0 .. $#ARGV)
+		{
+			if ($nodeClass{$k} =~ /$ARGV[$i]/)
+			{
+				$matched = 1;
+				break;
+			}
+		}
+	}
+
+	next if ( $filter == 1 and $matched == 0 );
+	
+	$color = $nodeprops{$k}{job}  ? "red" : "green";
+	print color($color) . "$k   " . $nodeClass{$k} . "\t" . color("reset");
+	$totalCores+=$nodeprops{$k}{cores};
+	print "$nodeprops{$k}{cores}core\t";
+	
+    for my $j (keys %{ $nodeprops{$k}{job} }) {
+      print "[" . color("cyan") . "#$j" . color("reset") . ":" . color("yellow") .  $nodeprops{$k}{job}{$j}{user} . color("reset") . "]";
+    }
+	
+	if( $nodeprops{$k}{status} =~ /down/)
+	{
+		print color("red") . "NODE IS OFFLINE" .  color("reset"); 
+	}
+	elsif( $nodeprops{$k}{status} =~ /drain/)
+	{
+		print color("magenta") . "temporary maintenance mode " .  color("reset"); 
+	}
+	
+	elsif (! %{ $nodeprops{$k}{job}})
+	{
+		print color("green") . "FREE" .  color("reset");
+	}
+    	#print  "\t" . $nodeprops{$k}{coresinuse} . " cores requested" if %{ $nodeprops{$k}{job}};
+	print  "\tload="  . $nodeprops{$k}{cpuload} if %{ $nodeprops{$k}{job}} || $detail;
+	print  "\tmem="  . $nodeprops{$k}{memload} . "/" .  $nodeprops{$k}{memlimit} if $detail ;
+	print  "\tthreads="  . $nodeprops{$k}{threads} if $detail;
+	print  "\thost="  . &computeToServer($k) if $detail;
+	print "\n";
+
+}
+print "TOTALS\tnodes: $totalNodes\t cores: $totalCores\n" if $totals;
+
+sub computeToServer
+{
+        my $compute = shift @_;
+        my $server = `grep $compute $dockerPath/*.yml | head -n 1`;
+        $server =~ /(server\d\d\d)/;
+        return $1;
+
+}
+
+#system "echo " . time . " " . $ENV{USER} ." >> $root_directory/log/access.log";
