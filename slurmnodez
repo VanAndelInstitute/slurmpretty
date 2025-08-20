@@ -1,4 +1,6 @@
 #!/usr/bin/perl
+use strict;
+use warnings;
 use Time::Local;
 use Term::ANSIColor;
 use Data::Dumper;
@@ -6,135 +8,241 @@ use Cwd 'abs_path';
 use File::Basename;
 
 my $EXECPATH = abs_path(dirname(__FILE__));
-$SLURMDIR= "/usr/local/bin";
-$dockerPath = "/varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode";
+my $SLURMDIR = "/usr/local/bin";
+my $dockerPath = "/varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode";
 
-$sinfo = `$SLURMDIR/sinfo -o "%n %e %m %t %c %C" -h`;
-$squeue = `$SLURMDIR/squeue --format="%i %.9P %.30j %.15u %.8T %.10M %.9l %.10D %R " -h`;
-$docker = ` ls -rt $EXECPATH/cpulogs/computeloads* | tail -n 1 | xargs cat`;
-open HAND, '<', "$EXECPATH/nodes.txt";
-%nodeClass = map {chomp; split /\t+/} (<HAND>);
+my $sinfo = `$SLURMDIR/sinfo -o "%n %e %m %t %c %C" -h`;
+my $squeue = `$SLURMDIR/squeue --format="%i %.9P %.30j %.15u %.8T %.10M %.9l %.10D %R " -h`;
+my $docker = `ls -rt $EXECPATH/cpulogs/computeloads* 2>/dev/null | tail -n 1 | xargs cat 2>/dev/null`;
 
-my $totalNodes=0;
-my $totalCores=0;
+open my $hand, '<', "$EXECPATH/nodes.txt" or die "Cannot open nodes.txt: $!";
+my %nodeClass = map { chomp; split /\t+/ } <$hand>;
+close $hand;
+
+my ($detail, $filter, $totals, $expand);
+my %nodeprops;
+my $term_width = 80;
+
+foreach my $arg (@ARGV) {
+    $detail = 1 if $arg eq "-f";
+    $filter = 1 if $arg eq "-p";
+    $totals = 1 if $arg eq "-t";
+    $expand = 1 if $arg eq "-e";
+    if ($arg =~ /^--width=(\d+)$/) {
+        $term_width = $1;
+    }
+}
+
+if (!$ENV{COLUMNS} && !$term_width) {
+    eval {
+        require Term::ReadKey;
+        my ($w, $h) = Term::ReadKey::GetTerminalSize(*STDOUT);
+        $term_width = $w if defined $w && $w > 10;
+    };
+}
+
+my $totalNodes = 0;
+my $totalCores = 0;
 my @nodes = split "\n", $sinfo;
 my @containers = split "\n", $docker;
 my @jobs = split "\n", $squeue;
-$detail = 1 if $ARGV[0] eq "-f";
-$filter = 1 if $ARGV[0] eq "-p";
-$totals = 1 if $ARGV[0] eq "-t";
 
-foreach my $n (@nodes)
-{
-	$totalNodes++;
-	my @lines = split /\s+/, $n;
-	my $node = $lines[0];
-	my @nodeCores = split "/", $lines[5];
-	$nodeprops{$node}{status}=$lines[3];
-	$nodeprops{$node}{cores}=$lines[4];
-	$nodeprops{$node}{coresinuse}=$nodeCores[0];
-	$nodeprops{$node}{coresfree}=$nodeCores[1];
+foreach my $n (@nodes) {
+    $totalNodes++;
+    my @lines = split /\s+/, $n;
+    my $node = $lines[0];
+    my @nodeCores = split "/", $lines[5];
+    $nodeprops{$node}{status} = $lines[3];
+    $nodeprops{$node}{cores} = $lines[4];
+    $nodeprops{$node}{coresinuse} = $nodeCores[0];
+    $nodeprops{$node}{coresfree} = $nodeCores[1];
 }
 
-foreach my $n (@containers)
-{
-
-	my @lines = split /\s+/, $n;
-	my $node = $lines[2];
-	$nodeprops{$node}{baremetal}=$lines[0];
-	$nodeprops{$node}{baremetal} =~ s/\://g;
-	$nodeprops{$node}{cpuload}=$lines[3];
-	$nodeprops{$node}{cpuload} =~ s/\.\d+\%//;
-	$nodeprops{$node}{cpuload} = $nodeprops{$node}{cpuload} / 100;
-	$nodeprops{$node}{memload}=$lines[4];
-	$nodeprops{$node}{memload}=~ s/\.\d+//g;
-	$nodeprops{$node}{memlimit}=$lines[6];
-	$nodeprops{$node}{memlimit}=~ s/\.\d+//g;
-	$nodeprops{$node}{mempct}=$lines[7];
-	$nodeprops{$node}{threads}=$lines[14];
-}
-
-foreach my $n (@jobs)
-{
-	my @lines = split /\s+/, $n;
-	my $user = $lines[3];
-	my $jobID = $lines[0];
-	my $nodeList = $lines[8];
-	my @jobNodes;
-	while ($nodeList =~ /(\d\d\d)/g)
-	{
-		push @jobNodes, sprintf("compute%03d", $1);
-	}
-	while ($nodeList =~ /\W(\d\d\d)-(\d\d\d)/g)
-	{
-		for my $i ($1..$2)
-		{
-			push @jobNodes, sprintf("compute%03d", $i);
-		}
-	}
-	for my $j (@jobNodes)
-{
-		$nodeprops{$j}{job}{$jobID}{user} = $user;
-	}
-}
-#print Dumper(%nodeprops);
-
-foreach $k (sort keys %nodeprops)
-{
-	$matched = 0;
-	if ( $filter == 1)
-	{
-		for my $i (0 .. $#ARGV)
-		{
-			if ($nodeClass{$k} =~ /$ARGV[$i]/)
-			{
-				$matched = 1;
-				break;
-			}
-		}
-	}
-
-	next if ( $filter == 1 and $matched == 0 );
-	
-	$color = $nodeprops{$k}{job}  ? "red" : "green";
-	print color($color) . "$k   " . $nodeClass{$k} . "\t" . color("reset");
-	$totalCores+=$nodeprops{$k}{cores};
-	print "$nodeprops{$k}{cores}core\t";
-	
-    for my $j (keys %{ $nodeprops{$k}{job} }) {
-      print "[" . color("cyan") . "#$j" . color("reset") . ":" . color("yellow") .  $nodeprops{$k}{job}{$j}{user} . color("reset") . "]";
+foreach my $n (@containers) {
+    my @lines = split /\s+/, $n;
+    my $node = $lines[2];
+    next unless defined $node;
+    $nodeprops{$node}{baremetal} = $lines[0];
+    $nodeprops{$node}{baremetal} =~ s/\://g if defined $nodeprops{$node}{baremetal};
+    $nodeprops{$node}{cpuload} = $lines[3];
+    if (defined $nodeprops{$node}{cpuload}) {
+        $nodeprops{$node}{cpuload} =~ s/\.\d+\%//;
+        $nodeprops{$node}{cpuload} = $nodeprops{$node}{cpuload} / 100;
     }
-	
-	if( $nodeprops{$k}{status} =~ /down/)
-	{
-		print color("red") . "NODE IS OFFLINE" .  color("reset"); 
-	}
-	elsif( $nodeprops{$k}{status} =~ /drain/)
-	{
-		print color("magenta") . "temporary maintenance mode " .  color("reset"); 
-	}
-	
-	elsif (! %{ $nodeprops{$k}{job}})
-	{
-		print color("green") . "FREE" .  color("reset");
-	}
-    	#print  "\t" . $nodeprops{$k}{coresinuse} . " cores requested" if %{ $nodeprops{$k}{job}};
-	print  "\tload="  . $nodeprops{$k}{cpuload} if %{ $nodeprops{$k}{job}} || $detail;
-	print  "\tmem="  . $nodeprops{$k}{memload} . "/" .  $nodeprops{$k}{memlimit} if $detail ;
-	print  "\tthreads="  . $nodeprops{$k}{threads} if $detail;
-	print  "\thost="  . &computeToServer($k) if $detail;
-	print "\n";
-
+    $nodeprops{$node}{memload} = $lines[4];
+    $nodeprops{$node}{memload} =~ s/\.\d+//g if defined $nodeprops{$node}{memload};
+    $nodeprops{$node}{memlimit} = $lines[6];
+    $nodeprops{$node}{memlimit} =~ s/\.\d+//g if defined $nodeprops{$node}{memlimit};
+    $nodeprops{$node}{mempct} = $lines[7];
+    $nodeprops{$node}{threads} = $lines[14];
 }
+
+foreach my $n (@jobs) {
+    my @lines = split /\s+/, $n;
+    next unless @lines >= 9;
+    my $user = $lines[3];
+    my $jobID = $lines[0];
+    my $nodeList = $lines[8];
+    my @jobNodes;
+    while ($nodeList =~ /(\d\d\d)/g) {
+        push @jobNodes, sprintf("compute%03d", $1);
+    }
+    while ($nodeList =~ /\W(\d\d\d)-(\d\d\d)/g) {
+        for my $i ($1 .. $2) {
+            push @jobNodes, sprintf("compute%03d", $i);
+        }
+    }
+    for my $j (@jobNodes) {
+        push @{ $nodeprops{$j}{jobs_by_user}{$user} }, $jobID;
+    }
+}
+
+my $current_user = $ENV{USER} // '';
+
+sub suffix_text {
+    my $count = shift;
+    return $count > 0 ? color("white") . "(+$count more)" . color("reset") : "";
+}
+
+sub suffix_length {
+    my $count = shift;
+    return length(strip_ansi(suffix_text($count)));
+}
+
+foreach my $k (sort keys %nodeprops) {
+    next if ($filter && !$nodeClass{$k});
+    if ($filter) {
+        my $matched = 0;
+        for my $i (0 .. $#ARGV) {
+            next unless defined $ARGV[$i];
+            if ($nodeClass{$k} && $nodeClass{$k} =~ /\Q$ARGV[$i]\E/) {
+                $matched = 1;
+                last;
+            }
+        }
+        next if !$matched;
+    }
+
+    my $color = exists $nodeprops{$k}{jobs_by_user} ? "red" : "green";
+    my $prefix = color($color) . "$k   " . ($nodeClass{$k} // "") . "\t" . color("reset") . ($nodeprops{$k}{cores} // "") . "core\t";
+    print $prefix;
+    my $line_length = length(strip_ansi($prefix));
+
+    my $omitted_users = 0;
+    my $omitted_jobs = 0;
+    my $omitted_total = 0;
+    my $suffix = suffix_text(0);
+    my $suf_len = suffix_length(0);
+
+    my @all_users = ();
+    if (exists $nodeprops{$k}{jobs_by_user}) {
+        my %users_hash = %{ $nodeprops{$k}{jobs_by_user} };
+        if ($current_user && exists $users_hash{$current_user}) {
+            @all_users = ($current_user, grep { $_ ne $current_user } sort keys %users_hash);
+        } else {
+            @all_users = sort keys %users_hash;
+        }
+    }
+
+    USER: for my $user (@all_users) {
+        my $user_color = ($user eq $current_user) ? color("yellow") . color("bold") : color("yellow");
+        my $user_block = $user_color . "$user:" . color("reset");
+        my @jobs_for_user = @{ $nodeprops{$k}{jobs_by_user}{$user} };
+
+        my $full_block = $user_block;
+        foreach my $jobid (@jobs_for_user) {
+            $full_block .= "[" . color("cyan") . "$jobid" . color("reset") . "]";
+        }
+        $full_block .= " ";
+
+        my $full_block_plain = strip_ansi($full_block);
+        my $full_block_len = length($full_block_plain);
+
+        if (!$expand && ($line_length + $full_block_len + $suf_len > $term_width)) {
+            my $user_plain = strip_ansi($user_block);
+            my $user_len = length($user_plain);
+
+            if ($line_length + $user_len + $suf_len > $term_width) {
+                $omitted_users++;
+                $omitted_total = $omitted_users + $omitted_jobs;
+                $suffix = suffix_text($omitted_total);
+                $suf_len = suffix_length($omitted_total);
+                last USER;
+            }
+
+            print $user_block;
+            $line_length += $user_len;
+
+            my $jobs_printed = 0;
+
+            for my $jobid (@jobs_for_user) {
+                my $job_str = "[" . color("cyan") . "$jobid" . color("reset") . "]";
+                my $job_plain = strip_ansi($job_str);
+                my $job_len = length($job_plain);
+
+                if ($line_length + $job_len + $suf_len <= $term_width) {
+                    print $job_str;
+                    $line_length += $job_len;
+                    $jobs_printed++;
+                } else {
+                    $omitted_jobs += scalar(@jobs_for_user) - $jobs_printed;
+                    $omitted_total = $omitted_users + $omitted_jobs;
+                    $suffix = suffix_text($omitted_total);
+                    $suf_len = suffix_length($omitted_total);
+                    last USER;
+                }
+            }
+
+            if ($line_length + 1 + $suf_len <= $term_width) {
+                print " ";
+                $line_length++;
+            }
+
+        } else {
+            print $full_block;
+            $line_length += $full_block_len;
+        }
+    }
+
+    $omitted_total = $omitted_users + $omitted_jobs;
+    if ($omitted_total > 0) {
+        $suffix = suffix_text($omitted_total);
+        print $suffix;
+    }
+
+    if ($nodeprops{$k}{status} && $nodeprops{$k}{status} =~ /down/) {
+        print color("red") . "NODE IS OFFLINE" . color("reset");
+    } elsif ($nodeprops{$k}{status} && $nodeprops{$k}{status} =~ /drain/) {
+        print color("magenta") . "temporary maintenance mode " . color("reset");
+    } elsif (!exists $nodeprops{$k}{jobs_by_user}) {
+        print color("green") . "FREE" . color("reset");
+    }
+
+    $nodeprops{$k}{cpuload} = "" unless defined $nodeprops{$k}{cpuload};
+    $nodeprops{$k}{threads} = "" unless defined $nodeprops{$k}{threads};
+    $nodeprops{$k}{memload} = "" unless defined $nodeprops{$k}{memload};
+    $nodeprops{$k}{memlimit} = "" unless defined $nodeprops{$k}{memlimit};
+
+    print "\tload=" . $nodeprops{$k}{cpuload} if $detail;
+    print "\tmem=" . $nodeprops{$k}{memload} . "/" . $nodeprops{$k}{memlimit} if $detail;
+    print "\tthreads=" . $nodeprops{$k}{threads} if $detail;
+    print "\thost=" . computeToServer($k) if $detail;
+    print "\n";
+}
+
 print "TOTALS\tnodes: $totalNodes\t cores: $totalCores\n" if $totals;
 
-sub computeToServer
-{
-        my $compute = shift @_;
-        my $server = `grep $compute $dockerPath/*.yml | head -n 1`;
-        $server =~ /(server\d\d\d)/;
-        return $1;
-
+sub computeToServer {
+    my $compute = shift @_;
+    my $server = `grep $compute $dockerPath/server*.yml 2>/dev/null | head -n 1`;
+    return "" unless defined $server;
+    $server =~ /(server\d{3})/;
+    return $1 // "";
 }
 
-#system "echo " . time . " " . $ENV{USER} ." >> $root_directory/log/access.log";
+sub strip_ansi {
+    my ($s) = @_;
+    $s =~ s/\e\[[0-9;]*m//g if defined $s;
+    return $s // "";
+}
+
