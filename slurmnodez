@@ -13,7 +13,7 @@ my $dockerPath = "/varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode";
 
 my $sinfo = `$SLURMDIR/sinfo -o "%n %e %m %t %c %C" -h`;
 my $squeue = `$SLURMDIR/squeue --format="%i %.9P %.30j %.15u %.8T %.10M %.9l %.10D %R " -h`;
-my $docker;
+my $docker = "";
 
 open my $hand, '<', "$EXECPATH/nodes.txt" or die "Cannot open nodes.txt: $!";
 my %nodeClass = map { chomp; split /\t+/ } <$hand>;
