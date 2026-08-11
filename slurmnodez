@@ -13,7 +13,7 @@ my $dockerPath = "/varidata/research/clustermgmt/vaihpc/VAIDocker/hpcnode";
 
 my $sinfo = `$SLURMDIR/sinfo -o "%n %e %m %t %c %C" -h`;
 my $squeue = `$SLURMDIR/squeue --format="%i %.9P %.30j %.15u %.8T %.10M %.9l %.10D %R " -h`;
-my $docker = `ls -rt $EXECPATH/cpulogs/computeloads* 2>/dev/null | tail -n 1 | xargs cat 2>/dev/null`;
+my $docker;
 
 open my $hand, '<', "$EXECPATH/nodes.txt" or die "Cannot open nodes.txt: $!";
 my %nodeClass = map { chomp; split /\t+/ } <$hand>;
@@ -24,14 +24,16 @@ my %nodeprops;
 my $term_width = 80;
 
 foreach my $arg (@ARGV) {
-    $detail = 1 if $arg eq "-f";
-    $filter = 1 if $arg eq "-p";
-    $totals = 1 if $arg eq "-t";
-    $expand = 1 if $arg eq "-e";
+    $detail = 1 if $arg eq "-f"; #show underlying container info
+    $filter = 1 if $arg eq "-p"; #filter
+    $totals = 1 if $arg eq "-t"; #show the total number of cores and nodes at the end of output
+    $expand = 1 if $arg eq "-e"; #do not truncate list of jobs on nodes
     if ($arg =~ /^--width=(\d+)$/) {
         $term_width = $1;
     }
 }
+
+$docker = `ls -rt $EXECPATH/cpulogs/computeloads* 2>/dev/null | tail -n 1 | xargs cat 2>/dev/null` if $detail;
 
 if (!$ENV{COLUMNS} && !$term_width) {
     eval {
@@ -48,12 +50,15 @@ my @containers = split "\n", $docker;
 my @jobs = split "\n", $squeue;
 
 foreach my $n (@nodes) {
+    #each line should have the following format
+    # compute086 794745 1000000 mix 128 35/93/0/128
     $totalNodes++;
     my @lines = split /\s+/, $n;
     my $node = $lines[0];
     my @nodeCores = split "/", $lines[5];
     $nodeprops{$node}{status} = $lines[3];
     $nodeprops{$node}{cores} = $lines[4];
+    $totalCores += $lines[4];
     $nodeprops{$node}{coresinuse} = $nodeCores[0];
     $nodeprops{$node}{coresfree} = $nodeCores[1];
 }
