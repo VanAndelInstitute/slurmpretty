@@ -3,10 +3,10 @@ use strict;
 my $cpuUtilizationCutoff = 10;
 my $memUtilizationCutoff = 0.20;
 my $threadsUtilizationCutoff = 35;
-my $idleLimitHours = 4;
+my $idleLimitHours = 9;
 my $idleLimitMin = 60 * $idleLimitHours;
 
-my @partitions = qw/bigmem gpu/;
+my @partitions = qw/bigmem gpu epi short long gpulong gpushort/;
 
 for my $p (@partitions)
 {
@@ -32,11 +32,16 @@ sub checkJob
 	# ex: 00:39:10   or   8-23:14:07
 	my $timeString = $1;
 
-	#convert total run time to hours (rounded)
-	$timeString =~ /^(\d+)-(\d\d):(\d\d):(\d\d)$/;
-	my $days = $1 * 24 || 0;
-	$timeString =~ /(\d\d):(\d\d):(\d\d)$/;
-	my $hours = $1 + $days ;
+        #convert total run time to hours (rounded)
+        my $hours = 0;
+        if($timeString =~ /^(\d+)-(\d\d):(\d\d):(\d\d)$/)
+        {
+                $hours += ($1 * 24);
+        }
+        if($timeString =~ /(\d\d):(\d\d):(\d\d)$/)
+        {
+                $hours += $1
+        }
 
 	#get User of job
 	$jobData =~ /\sUserId=([\w\.]+)/;
@@ -53,8 +58,9 @@ sub checkJob
 		my $nodeCores=$1;
 		
 		#get the docker stats history for last minutes
-		my @dockerHistory = `cd /varidata/research/software/slurmPretty/cpulogs; find ./ -mmin -$idleLimitMin | xargs ls -rt | xargs  grep $node`;
+		my @dockerHistory = `cd /varidata/research/software/slurmPretty/cpulogs; find ./ -maxdepth 1 -name \"computeloads*\" -mmin -$idleLimitMin | xargs  grep $node`;
 		chomp @dockerHistory;
+		@dockerHistory = sort @dockerHistory;
 		
 		my $loadCount=0;
 		my $maxLoad=0;
@@ -97,11 +103,11 @@ Dear $userId,
 To ensure HPC resources are used fairly and not wasted, the system automatically detects jobs that may be considered wasteful, incorrectly sized, or abusive. Please understand HPC is a community resource, improper usage can impact other users. Note that these limits only apply to the public partitions, private nodes owned directly by a lab are not enforced or monitored for efficiency. 
 
 - Idle jobs that are occupying a node but not doing anything are not allowed
-- Jobs that attempt to "reserve" or "keep" nodes by performing trivial tasks to artificially  inflate cpu usage to appear "busy" are not allowed. 
-- Undersized jobs that only use a small amount of resource but are allocated to nodes with large resources are wasteful and not allowed. These jobs should be put on a node that best matches the job requirements. For example, a job that only utilizes a few cores should never but run on a 128core node, and instead should use one of the smaller nodes from either the quick or short partitions. 
+- Jobs that attempt to "reserve" or "keep" nodes by performing trivial tasks to artificially inflate cpu usage to appear "busy" are not allowed. 
+- Undersized jobs that only use a small amount of resource but are allocated to nodes with large resources are wasteful and not allowed. These jobs should be put on a node that best matches the job requirements. For example, a job that only utilizes a few cores should never but run on a 128core node, and instead should use one of the smaller nodes from either the short partition. 
 
 
-The system has detected that your job $jobID running on $node has been excessively idle for an extended period of time and has very poor utilization. Please immediately address this issue and/or resubmit it to a more appropriate partition. Wasteful Jobs that continue to run after being warned will be terminated. Continued misuse of the cluster may result in automatic deprioritization of your jobs.
+The system has detected that your job $jobID running on $node has been excessively idle for over $idleLimitHours hours and has very poor utilization. Please immediately address this issue and/or resubmit it to a more appropriate partition. Wasteful Jobs that continue to run after being warned may be terminated. Continued misuse of the cluster may result in deprioritization of your jobs.
 
 
 please open a help ticket with the HPC team if you have any questions: hpc3\@vai.org
@@ -160,11 +166,17 @@ sub email
 	my $to = shift @_;
 	my $subject = shift @_;
 	my $body = shift @_;
+	return if -e "/varidata/research/software/slurmPretty/admintools/idletracking/$to" && -M "/varidata/research/software/slurmPretty/admintools/idletracking/$to" < .18;
 	logit("\t\t\t/usr/bin/mail -r hpc3\@vai.org -s \"$subject\" $to");
 	#open(my $MAIL, "|/usr/bin/mail -r hpc3\@vai.org -b cdd89583.vai.org\@amer.teams.ms -s \"$subject\" $to") or die ("Can't sendmail - $!");
 	open(my $MAIL, "|/usr/bin/mail -r hpc3\@vai.org -s \"$subject\" $to") or die ("Can't sendmail - $!");
 	print $MAIL $body;
 	close($MAIL);
+	#save a copy per user.
+	open(my $COPY, ">/varidata/research/software/slurmPretty/admintools/idletracking/$to") or die ("Can't save copy $!");
+	print $COPY $body;
+	close($COPY);
+	
 }
 sub logit 
 {
