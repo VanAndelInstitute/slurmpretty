@@ -83,7 +83,6 @@ compute100	laird
 compute101	laird
 compute102	genomics
 compute103	genomics
-compute104	brundin
 compute105	zhang
 compute106	triche
 compute107	triche
@@ -112,7 +111,7 @@ compute129	walton
 compute130	worden
 compute131	hli
 compute132	hli
-compute133	hpcAdmins
+compute134	hpcAdmins
 compute135	cryoem
 compute136	cryoem
 compute137	cryoem
@@ -141,4 +140,6 @@ compute198	gpushort
 compute199	gpushort
 compute200	gpulong
 compute201	gpulong
+compute202	gpulong
+compute203	gpulong
 
